@@ -8,6 +8,7 @@ import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.function.BiConsumer;
 import java.util.stream.Stream;
 
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
@@ -52,6 +53,8 @@ import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 import net.neoforged.neoforge.event.level.BlockEvent;
+import net.neoforged.neoforge.event.level.ChunkEvent;
+import net.neoforged.neoforge.event.level.ChunkWatchEvent;
 import net.neoforged.neoforge.items.IItemHandler;
 
 @EventBusSubscriber( modid=MoneyMod.MOD_ID, bus= EventBusSubscriber.Bus.GAME)
@@ -154,6 +157,24 @@ public class EventHandler {
 				getSaleInfo(nbt, event.getEntity(), itemLookup(event.getLevel().registryAccess()));
 		}
 	}
+	
+	@SubscribeEvent
+	public static void onSignLoad(ChunkWatchEvent.Watch event) {
+		if (event.getLevel().isClientSide()) return;
+		BiConsumer<BlockPos, BlockState> fixer = (pos, state) -> {
+			if (event.getChunk().getBlockEntity(pos) instanceof SignBlockEntity signBlockEntity) {
+				if (signBlockEntity.getPersistentData().contains(ACTIVATED) &&
+					Arrays.stream(signBlockEntity.getFrontText().getMessages(false)).allMatch(CommonComponents.EMPTY::equals)
+				){
+					Component[] text = signBlockEntity.getFrontText().getMessages(true);
+					signBlockEntity.setText(new SignText(text, text, DyeColor.BLACK, false), true);
+					signBlockEntity.setChanged();
+					MoneyMod.LOGGER.debug("Applied No-Profanity-Filter Fix to sign at {}", pos);
+				}
+			}
+		};
+		event.getChunk().findBlocks((blockState) -> blockState.getBlock() instanceof WallSignBlock && blockState.hasBlockEntity(), fixer);
+	}
 
 	@SubscribeEvent
 	public static void onSignRightClick(PlayerInteractEvent.RightClickBlock event) {
@@ -212,17 +233,15 @@ public class EventHandler {
 
 		//store shop data on sign
 		tile.getPersistentData().putDouble(PRICE, price);
-		tile.setText(new SignText(
-				new Component[] { CommonComponents.EMPTY, CommonComponents.EMPTY, CommonComponents.EMPTY, CommonComponents.EMPTY },
-				new Component[] {
-					Component.literal(actionEntry.getString()).withStyle(ChatFormatting.BLUE),
-					tile.getFrontText().getMessage(1, true),
-					tile.getFrontText().getMessage(2, true),
-					Component.literal(Config.getFormattedCurrency(price)).withStyle(ChatFormatting.GOLD)
-				},
-				DyeColor.BLACK,
-				false
-		), true);
+
+		Component[] signText = new Component[] {
+				Component.literal(actionEntry.getString()).withStyle(ChatFormatting.BLUE),
+				tile.getFrontText().getMessage(1, true),
+				tile.getFrontText().getMessage(2, true),
+				Component.literal(Config.getFormattedCurrency(price)).withStyle(ChatFormatting.GOLD)
+		};
+
+		tile.setText(new SignText(signText, signText, DyeColor.BLACK, false), true);
 		tile.getPersistentData().putString(TYPE, shopString);
 		tile.getPersistentData().putBoolean(ACTIVATED, true);
 		tile.getPersistentData().putUUID(OWNER, player.getUUID());
