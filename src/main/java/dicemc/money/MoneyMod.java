@@ -1,7 +1,6 @@
 package dicemc.money;
 
 import com.mojang.logging.LogUtils;
-import dicemc.money.api.MoneyManager;
 import dicemc.money.commands.AccountCommandRoot;
 import dicemc.money.commands.AccountCommandTop;
 import dicemc.money.commands.ShopCommandBuilder;

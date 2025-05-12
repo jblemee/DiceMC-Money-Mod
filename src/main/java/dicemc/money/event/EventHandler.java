@@ -1,49 +1,38 @@
 package dicemc.money.event;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.NoSuchElementException;
-import java.util.Objects;
-import java.util.UUID;
-import java.util.stream.Stream;
-
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
-
 import dicemc.money.MoneyMod;
 import dicemc.money.MoneyMod.AcctTypes;
 import dicemc.money.setup.Config;
 import dicemc.money.storage.DatabaseManager;
 import dicemc.money.storage.MoneyWSD;
+import net.minecraft.ChatFormatting;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.Registries;
-import net.minecraft.network.chat.CommonComponents;
-import net.minecraft.world.item.DyeColor;
-import net.minecraft.world.item.Items;
-import net.minecraft.world.level.block.entity.SignText;
-import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.level.block.Block;
-import net.minecraft.world.level.block.WallSignBlock;
-import net.minecraft.world.entity.player.Player;
-import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.WritableBookItem;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.nbt.TagParser;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
-import net.minecraft.world.level.block.entity.SignBlockEntity;
-import net.minecraft.world.level.block.entity.BlockEntity;
-import net.minecraft.core.Direction;
-import net.minecraft.core.BlockPos;
+import net.minecraft.nbt.TagParser;
+import net.minecraft.network.chat.CommonComponents;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
-import net.minecraft.ChatFormatting;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.DyeColor;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.item.WritableBookItem;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.WallSignBlock;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.entity.SignBlockEntity;
+import net.minecraft.world.level.block.entity.SignText;
+import net.minecraft.world.level.block.state.BlockState;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.capabilities.Capabilities;
@@ -53,6 +42,9 @@ import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 import net.neoforged.neoforge.event.level.BlockEvent;
 import net.neoforged.neoforge.items.IItemHandler;
+
+import java.util.*;
+import java.util.stream.Stream;
 
 @EventBusSubscriber( modid=MoneyMod.MOD_ID, bus= EventBusSubscriber.Bus.GAME)
 public class EventHandler {
@@ -68,7 +60,7 @@ public class EventHandler {
 	public static void onPlayerLogin(PlayerEvent.PlayerLoggedInEvent event) {
 		if (!event.getEntity().level().isClientSide && event.getEntity() instanceof ServerPlayer player) {
 			double balP = MoneyWSD.get().getBalance(AcctTypes.PLAYER.key, player.getUUID());
-			player.sendSystemMessage(Component.literal(Config.getFormattedCurrency(balP)));
+			player.displayClientMessage(Component.literal(Config.getFormattedCurrency(balP)), false);
 		}
 	}
 	
@@ -85,7 +77,7 @@ public class EventHandler {
 							, player.getUUID(), AcctTypes.PLAYER.key, player.getName().getString()
 							, -loss, "Loss on Death Event");
 				}
-				player.sendSystemMessage(Component.translatable("message.death", Config.getFormattedCurrency(loss)));
+				player.displayClientMessage(Component.translatable("message.death", Config.getFormattedCurrency(loss)), false);
 			}
 		}
 	}
@@ -182,7 +174,7 @@ public class EventHandler {
 			price = Math.abs(Double.valueOf(tile.getFrontText().getMessage(3, true).getString()));
 		}
 		catch(NumberFormatException e) {
-			player.sendSystemMessage(Component.translatable("message.activate.failure.money"));
+			player.displayClientMessage(Component.translatable("message.activate.failure.money"), false);
 			world.destroyBlock(pos, true, player);
 			return false;
 		}
@@ -192,7 +184,7 @@ public class EventHandler {
 			case "[sell]" -> player.hasPermissions(Config.SHOP_LEVEL.get()) ? "sell": null;
 			case "[server-buy]", "[server-sell]" -> {
 				if (!player.hasPermissions(Config.ADMIN_LEVEL.get())) {
-					player.sendSystemMessage(Component.translatable("message.activate.failure.admin"));
+					player.displayClientMessage(Component.translatable("message.activate.failure.admin"), false);
 					yield null;
 				}
 				yield actionEntry.getString().toLowerCase().replace("[","").replace("]","");
@@ -272,9 +264,9 @@ public class EventHandler {
 		double value = nbt.getDouble(PRICE);
 		MutableComponent itemComponent = getTransItemsDisplayString(transItems);
 		if (isBuy)
-			player.sendSystemMessage(Component.translatable("message.shop.info", itemComponent, Config.getFormattedCurrency(value)));
+			player.displayClientMessage(Component.translatable("message.shop.info", itemComponent, Config.getFormattedCurrency(value)), false);
 		else
-			player.sendSystemMessage(Component.translatable("message.shop.info", Config.getFormattedCurrency(value), itemComponent));
+			player.displayClientMessage(Component.translatable("message.shop.info", Config.getFormattedCurrency(value), itemComponent), false);
 	}
 	
 	private static MutableComponent getTransItemsDisplayString(List<ItemStack> list ) {
@@ -332,7 +324,7 @@ public class EventHandler {
 			//First check the available funds and stock for trade
 			double balP = wsd.getBalance(AcctTypes.PLAYER.key, player.getUUID());
 			if (value > balP) {
-				player.sendSystemMessage(Component.translatable("message.shop.buy.failure.funds"));
+				player.displayClientMessage(Component.translatable("message.shop.buy.failure.funds"), false);
 				return;
 			}
 			Map<Integer, ItemStack> slotMap = new HashMap<>();
@@ -355,7 +347,7 @@ public class EventHandler {
 				}
 				test =  stackSize[0] <= 0;
 				if (!test) {
-					player.sendSystemMessage(Component.translatable("message.shop.buy.failure.stock"));
+					player.displayClientMessage(Component.translatable("message.shop.buy.failure.stock"), false);
 					return;
 				}
 			}
@@ -379,15 +371,14 @@ public class EventHandler {
 					, getTransItemsDisplayString(transItems), Config.getFormattedCurrency(value));
 			player.displayClientMessage(msg, true);
 			player.getServer().sendSystemMessage(msg);
-			return;
-		}
+        }
 		//================SELL=================================================================================
 		else if (action.equalsIgnoreCase("sell")) { //SELL
 			//First check the available funds and stock for trade
 			UUID shopOwner = nbt.getUUID(OWNER);
 			double balP = wsd.getBalance(AcctTypes.PLAYER.key, shopOwner);
 			if (value > balP) {
-				player.sendSystemMessage(Component.translatable("message.shop.sell.failure.funds"));
+				player.displayClientMessage(Component.translatable("message.shop.sell.failure.funds"), false);
 				return;
 			}
 			//test if player has item in inventory to sell
@@ -410,7 +401,7 @@ public class EventHandler {
 					if (stackSize <= 0) break;
 				}
 				if (stackSize > 0) {
-					player.sendSystemMessage(Component.translatable("message.shop.sell.failure.stock"));
+					player.displayClientMessage(Component.translatable("message.shop.sell.failure.stock"), false);
 					return;
 				}
 				
@@ -441,7 +432,7 @@ public class EventHandler {
                     }
                 }
                 if (!sim.isEmpty()) {
-                    player.sendSystemMessage(Component.translatable("message.shop.sell.failure.space"));
+                    player.displayClientMessage(Component.translatable("message.shop.sell.failure.space"), false);
                 } else
                     test = true;
                 if (!test) return;
@@ -461,16 +452,15 @@ public class EventHandler {
 			for (Map.Entry<Integer, ItemStack> map : invSlotMap.entrySet()) {
 				inv.insertItem(map.getKey(), map.getValue(), false);
 			}
-			player.sendSystemMessage(Component.translatable("message.shop.sell.success"
-					, Config.getFormattedCurrency(value), getTransItemsDisplayString(transItems)));
-			return;
-		}
+			player.displayClientMessage(Component.translatable("message.shop.sell.success"
+					, Config.getFormattedCurrency(value), getTransItemsDisplayString(transItems)), false);
+        }
 		//================SERVER BUY=================================================================================
 		else if (action.equalsIgnoreCase("server-buy")) { //SERVER BUY
 			//First check the available funds and stock for trade
 			double balP = wsd.getBalance(AcctTypes.PLAYER.key, player.getUUID());
 			if (value > balP) {
-				player.sendSystemMessage(Component.translatable("message.shop.buy.failure.funds"));
+				player.displayClientMessage(Component.translatable("message.shop.buy.failure.funds"), false);
 				return;
 			}
 			wsd.changeBalance(AcctTypes.PLAYER.key, player.getUUID(), -value);
@@ -486,10 +476,9 @@ public class EventHandler {
 				if (!player.addItem(pStack))
 					player.drop(pStack, false);
 			}
-			player.sendSystemMessage(Component.translatable("message.shop.buy.success"
-					, getTransItemsDisplayString(transItems), Config.getFormattedCurrency(value)));
-			return;
-		}
+			player.displayClientMessage(Component.translatable("message.shop.buy.success"
+					, getTransItemsDisplayString(transItems), Config.getFormattedCurrency(value)), false);
+        }
 		//================SERVER SELL=================================================================================
 		else if (action.equalsIgnoreCase("server-sell")) { //SERVER SELL
 			Map<Integer, ItemStack> slotMap = new HashMap<>();
@@ -510,7 +499,7 @@ public class EventHandler {
 					if (stackSize <= 0) break;
 				}
 				if (stackSize > 0) {
-					player.sendSystemMessage(Component.translatable("message.shop.sell.failure.stock"));
+					player.displayClientMessage(Component.translatable("message.shop.sell.failure.stock"), false);
 					return;
 				}
 				
@@ -526,10 +515,9 @@ public class EventHandler {
 			for (Map.Entry<Integer, ItemStack> pSlots : slotMap.entrySet()) {
 				player.getInventory().getItem(pSlots.getKey()).shrink(pSlots.getValue().getCount());
 			}
-			player.sendSystemMessage(Component.translatable("message.shop.sell.success"
-					, Config.getFormattedCurrency(value), getTransItemsDisplayString(transItems)));
-			return;
-		}
+			player.displayClientMessage(Component.translatable("message.shop.sell.success"
+					, Config.getFormattedCurrency(value), getTransItemsDisplayString(transItems)), false);
+        }
 	}
 
 	public static HolderLookup.Provider itemLookup(RegistryAccess access) {
