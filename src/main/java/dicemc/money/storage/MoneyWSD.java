@@ -1,9 +1,5 @@
 package dicemc.money.storage;
 
-import java.util.HashMap;
-import java.util.Map;
-import java.util.UUID;
-
 import dicemc.money.MoneyMod;
 import dicemc.money.MoneyMod.AcctTypes;
 import dicemc.money.api.IMoneyManager;
@@ -13,16 +9,19 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.saveddata.SavedData;
 import net.neoforged.neoforge.server.ServerLifecycleHooks;
+
+import java.util.HashMap;
+import java.util.Map;
+import java.util.UUID;
 
 public class MoneyWSD extends SavedData implements IMoneyManager {
 	private static final String DATA_NAME = MoneyMod.MOD_ID + "_data";
 
 	public MoneyWSD() {}
 	
-	private Map<ResourceLocation, Map<UUID, Double>> accounts = new HashMap<>();
+	private final Map<ResourceLocation, Map<UUID, Double>> accounts = new HashMap<>();
 	
 	public Map<UUID, Double> getAccountMap(ResourceLocation res) {return accounts.getOrDefault(res, new HashMap<>());}
 	
