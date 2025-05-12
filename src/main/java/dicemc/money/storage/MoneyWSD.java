@@ -5,9 +5,9 @@ import dicemc.money.MoneyMod.AcctTypes;
 import dicemc.money.api.IMoneyManager;
 import dicemc.money.setup.Config;
 import net.minecraft.core.HolderLookup;
+import net.minecraft.core.UUIDUtil;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
-import net.minecraft.nbt.Tag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.saveddata.SavedData;
 import net.neoforged.neoforge.server.ServerLifecycleHooks;
@@ -84,16 +84,16 @@ public class MoneyWSD extends SavedData implements IMoneyManager {
 	}
 
 	public MoneyWSD(CompoundTag nbt, HolderLookup.Provider provider) {
-		ListTag baseList = nbt.getList("types", Tag.TAG_COMPOUND);
+		ListTag baseList = nbt.getList("types").orElseThrow();
 		for (int b = 0; b < baseList.size(); b++) {
-			CompoundTag entry = baseList.getCompound(b);
-			ResourceLocation res = ResourceLocation.parse(entry.getString("type"));
+			CompoundTag entry = baseList.getCompound(b).orElseThrow();
+			ResourceLocation res = ResourceLocation.parse(entry.getString("type").orElseThrow());
 			Map<UUID, Double> data = new HashMap<>();
-			ListTag list = entry.getList("data", Tag.TAG_COMPOUND);
+			ListTag list = entry.getList("data").orElseThrow();
 			for (int i = 0; i < list.size(); i++) {
-				CompoundTag snbt = list.getCompound(i);
-				UUID id = snbt.getUUID("id");
-				double balance = snbt.getDouble("balance");
+				CompoundTag snbt = list.getCompound(i).orElseThrow();
+				UUID id = UUIDUtil.uuidFromIntArray(snbt.getIntArray("id").orElseThrow());
+				double balance = snbt.getDouble("balance").orElse(0.0);
 				data.put(id, balance);
 			}
 			accounts.put(res, data);
@@ -109,7 +109,7 @@ public class MoneyWSD extends SavedData implements IMoneyManager {
 			entry.putString("type", base.getKey().toString());
 			for (Map.Entry<UUID, Double> data : base.getValue().entrySet()) {
 				CompoundTag dataNBT = new CompoundTag();
-				dataNBT.putUUID("id", data.getKey());
+				dataNBT.putIntArray("id", UUIDUtil.uuidToIntArray(data.getKey()));
 				dataNBT.putDouble("balance", data.getValue());
 				list.add(dataNBT);
 			}
