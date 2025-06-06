@@ -7,20 +7,17 @@ import dicemc.money.setup.Config;
 import dicemc.money.storage.DatabaseManager;
 import dicemc.money.storage.MoneyWSD;
 import net.minecraft.ChatFormatting;
-import net.minecraft.core.BlockPos;
-import net.minecraft.core.Direction;
-import net.minecraft.core.HolderLookup;
-import net.minecraft.core.RegistryAccess;
+import net.minecraft.core.*;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
-import net.minecraft.nbt.Tag;
 import net.minecraft.nbt.TagParser;
 import net.minecraft.network.chat.CommonComponents;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.util.TriState;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.ItemStack;
@@ -36,7 +33,6 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.capabilities.Capabilities;
-import net.neoforged.neoforge.common.util.TriState;
 import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
@@ -103,10 +99,11 @@ public class EventHandler {
 			if (!nbt.isEmpty() && nbt.contains(ACTIVATED)) {
 				Player player = event.getPlayer();
 				boolean hasPerms = player.hasPermissions(Config.ADMIN_LEVEL.get());
-				if (!nbt.getUUID(OWNER).equals(player.getUUID())) {
+				UUID ownerUUID = UUIDUtil.uuidFromIntArray(nbt.getIntArray(OWNER).orElseThrow());
+				if (!ownerUUID.equals(player.getUUID())) {
 					event.setCanceled(!hasPerms);					
 				}
-				else if(nbt.getUUID(OWNER).equals(player.getUUID()) || hasPerms) {
+				else if(hasPerms) {
 					BlockPos backBlock = BlockPos.of(BlockPos.offset(event.getPos().asLong(), tile.getBlockState().getValue(WallSignBlock.FACING).getOpposite()));
 					event.getLevel().getBlockEntity(backBlock).getPersistentData().remove(IS_SHOP);
 				}
@@ -129,7 +126,8 @@ public class EventHandler {
 		IItemHandler inv = event.getLevel().getCapability(Capabilities.ItemHandler.BLOCK, event.getPos(), null);
 		if (invTile != null && inv != null) {
 			if (invTile.getPersistentData().contains(IS_SHOP)) {
-				if (!invTile.getPersistentData().getUUID(OWNER).equals(event.getEntity().getUUID())) {
+				UUID ownerUUID = UUIDUtil.uuidFromIntArray(invTile.getPersistentData().getIntArray(OWNER).orElseThrow());
+				if (!ownerUUID.equals(event.getEntity().getUUID())) {
 					event.setCanceled(!event.getEntity().hasPermissions(Config.ADMIN_LEVEL.get()));					
 				}
 			}
@@ -235,7 +233,7 @@ public class EventHandler {
 		tile.setText(new SignText(signText, signText, DyeColor.BLACK, false), true);
 		tile.getPersistentData().putString(TYPE, shopString);
 		tile.getPersistentData().putBoolean(ACTIVATED, true);
-		tile.getPersistentData().putUUID(OWNER, player.getUUID());
+		tile.getPersistentData().putIntArray(OWNER, UUIDUtil.uuidToIntArray(player.getUUID()));
 		//Serialize all items in the TE and store them in a ListNBT
 		ListTag lnbt = new ListTag();
 		for (int i = 0; i < inv.getSlots(); i++) {
@@ -250,7 +248,7 @@ public class EventHandler {
 		tile.saveWithFullMetadata(provider);
 		tile.setChanged();
 		storage.getPersistentData().putBoolean(IS_SHOP, true);
-		storage.getPersistentData().putUUID(OWNER, player.getUUID());
+		storage.getPersistentData().putIntArray(OWNER, UUIDUtil.uuidToIntArray(player.getUUID()));
 		storage.saveWithFullMetadata(provider);
 		BlockState state = world.getBlockState(pos);
 		world.sendBlockUpdated(pos, state, state, Block.UPDATE_CLIENTS);
@@ -262,7 +260,7 @@ public class EventHandler {
 		if (page.substring(0, 7).equalsIgnoreCase("vending")) {
 			String subStr = page.substring(8);
 			try {
-				stack = ItemStack.parse(provider, TagParser.parseTag(subStr)).get();
+				stack = ItemStack.parse(provider, TagParser.parseCompoundFully(subStr)).get();
 				return (CompoundTag) stack.save(provider);
 			}
 			catch(CommandSyntaxException | NoSuchElementException e) {e.printStackTrace();}
@@ -272,14 +270,14 @@ public class EventHandler {
 	}
 	
 	private static void getSaleInfo(CompoundTag nbt, Player player, HolderLookup.Provider provider) {
-		String type = nbt.getString(TYPE);
+		String type = nbt.getString(TYPE).orElseThrow();
 		boolean isBuy = type.equalsIgnoreCase("buy") || type.equalsIgnoreCase("server-buy");
 		List<ItemStack> transItems = new ArrayList<>();
-		ListTag itemsList = nbt.getList(ITEMS, Tag.TAG_COMPOUND);
+		ListTag itemsList = nbt.getList(ITEMS).orElseThrow();
 		for (int i = 0; i < itemsList.size(); i++) {
-			transItems.add(ItemStack.parse(provider, itemsList.getCompound(i)).orElse(new ItemStack(Items.AIR)));
+			transItems.add(ItemStack.parse(provider, itemsList.getCompound(i).orElseThrow()).orElse(new ItemStack(Items.AIR)));
 		}
-		double value = nbt.getDouble(PRICE);
+		double value = nbt.getDouble(PRICE).orElseThrow();
 		MutableComponent itemComponent = getTransItemsDisplayString(transItems);
 		if (isBuy)
 			player.displayClientMessage(Component.translatable("message.shop.info", itemComponent, Config.getFormattedCurrency(value)), false);
@@ -317,9 +315,9 @@ public class EventHandler {
 		IItemHandler inv = player.level().getCapability(Capabilities.ItemHandler.BLOCK, tile.getBlockPos(), null);
 		List<ItemStack> transItems = new ArrayList<>();
 		Map<ItemStack, ItemStack> consolidatedItems = new HashMap<>();
-		ListTag itemsList = nbt.getList(ITEMS, Tag.TAG_COMPOUND);
+		ListTag itemsList = nbt.getList(ITEMS).orElseThrow();
 		for (int i = 0; i < itemsList.size(); i++) {
-			ItemStack srcStack = ItemStack.parse(itemLookup(player.level().registryAccess()), itemsList.getCompound(i)).orElse(new ItemStack(Items.AIR));
+			ItemStack srcStack = ItemStack.parse(itemLookup(player.level().registryAccess()), itemsList.getCompound(i).orElseThrow()).orElse(new ItemStack(Items.AIR));
 			ItemStack keyStack = srcStack.copy();
 			keyStack.setCount(1);
 			boolean hasEntry = false;
@@ -335,8 +333,8 @@ public class EventHandler {
 			transItems.add(map.getValue());
 		}
 		//ItemStack transItem = ItemStack.of(nbt.getCompound("item"));
-		String action = nbt.getString(TYPE);
-		double value = nbt.getDouble(PRICE);
+		String action = nbt.getString(TYPE).orElseThrow();
+		double value = nbt.getDouble(PRICE).orElse(0.0);
 		//================BUY=================================================================================
 		if (action.equalsIgnoreCase("buy")) { //BUY
 			//First check the available funds and stock for trade
@@ -371,14 +369,14 @@ public class EventHandler {
 			}
 			//Test if container has inventory to process.
 			//If so, process transfer of items and funds.			
-			UUID shopOwner = nbt.getUUID(OWNER);
+			UUID shopOwner = UUIDUtil.uuidFromIntArray(nbt.getIntArray(OWNER).orElseThrow());
 			wsd.transferFunds(AcctTypes.PLAYER.key, player.getUUID(), AcctTypes.PLAYER.key, shopOwner, value);
 			if (Config.ENABLE_HISTORY.get()) {
 				String itemPrint = "";
-				itemsList.forEach((a) -> {itemPrint.concat(a.getAsString());});
+				itemsList.forEach((a) -> {itemPrint.concat(a.toString());});
 				MoneyMod.dbm.postEntry(System.currentTimeMillis(), player.getUUID(), AcctTypes.PLAYER.key, player.getName().getString()
 						, shopOwner, AcctTypes.PLAYER.key, player.getServer().getProfileCache().get(shopOwner).get().getName()
-						, value, itemsList.getAsString());
+						, value, itemsList.toString());
 			}
 			for (Map.Entry<Integer, ItemStack> map : slotMap.entrySet()) {
 				ItemStack pStack = inv.extractItem(map.getKey(), map.getValue().getCount(), false);
@@ -393,7 +391,7 @@ public class EventHandler {
 		//================SELL=================================================================================
 		else if (action.equalsIgnoreCase("sell")) { //SELL
 			//First check the available funds and stock for trade
-			UUID shopOwner = nbt.getUUID(OWNER);
+			UUID shopOwner = UUIDUtil.uuidFromIntArray(nbt.getIntArray(OWNER).orElseThrow());
 			double balP = wsd.getBalance(AcctTypes.PLAYER.key, shopOwner);
 			if (value > balP) {
 				player.displayClientMessage(Component.translatable("message.shop.sell.failure.funds"), false);
@@ -459,10 +457,10 @@ public class EventHandler {
 			wsd.transferFunds(AcctTypes.PLAYER.key, shopOwner, AcctTypes.PLAYER.key, player.getUUID(), value);
 			if (Config.ENABLE_HISTORY.get()) {
 				String itemPrint = "";
-				itemsList.forEach((a) -> {itemPrint.concat(a.getAsString());});
+				itemsList.forEach((a) -> {itemPrint.concat(a.toString());});
 				MoneyMod.dbm.postEntry(System.currentTimeMillis(), shopOwner, AcctTypes.PLAYER.key, player.getServer().getProfileCache().get(shopOwner).get().getName()
 						, player.getUUID(), AcctTypes.PLAYER.key, player.getName().getString()
-						, value, itemsList.getAsString());
+						, value, itemsList.toString());
 			}
 			for (Map.Entry<Integer, ItemStack> pSlots : slotMap.entrySet()) {
 				player.getInventory().removeItem(pSlots.getKey(), pSlots.getValue().getCount());
@@ -484,10 +482,10 @@ public class EventHandler {
 			wsd.changeBalance(AcctTypes.PLAYER.key, player.getUUID(), -value);
 			if (Config.ENABLE_HISTORY.get()) {
 				String itemPrint = "";
-				itemsList.forEach((a) -> {itemPrint.concat(a.getAsString());});
+				itemsList.forEach((a) -> {itemPrint.concat(a.toString());});
 				MoneyMod.dbm.postEntry(System.currentTimeMillis(), DatabaseManager.NIL, AcctTypes.SERVER.key, "Server"
 						, player.getUUID(), AcctTypes.PLAYER.key, player.getName().getString()
-						, -value, itemsList.getAsString());
+						, -value, itemsList.toString());
 			}
 			for (int i = 0; i < transItems.size(); i++) {
 				ItemStack pStack = transItems.get(i).copy();
@@ -525,10 +523,10 @@ public class EventHandler {
 			wsd.changeBalance(AcctTypes.PLAYER.key, player.getUUID(), value);
 			if (Config.ENABLE_HISTORY.get()) {
 				String itemPrint = "";
-				itemsList.forEach((a) -> {itemPrint.concat(a.getAsString());});
+				itemsList.forEach((a) -> {itemPrint.concat(a.toString());});
 				MoneyMod.dbm.postEntry(System.currentTimeMillis(), DatabaseManager.NIL, AcctTypes.SERVER.key, "Server"
 						, player.getUUID(), AcctTypes.PLAYER.key, player.getName().getString()
-						, value, itemsList.getAsString());
+						, value, itemsList.toString());
 			}
 			for (Map.Entry<Integer, ItemStack> pSlots : slotMap.entrySet()) {
 				player.getInventory().getItem(pSlots.getKey()).shrink(pSlots.getValue().getCount());

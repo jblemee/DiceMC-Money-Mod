@@ -64,8 +64,8 @@ public class MoneyMod {
 	private static String getWorldName(String raw) {
 		int start = raw.indexOf("[")+1;
 		int end = raw.contains("]") ? raw.length()-1 : raw.length();
-		start = (start >= 0 && start < end) ? start : 0;
-		end = (end >= 0) ? end : 0;
+		start = (start > 0 && start < end) ? start : 0;
+		end = Math.max(end, 0);
 		return raw.substring(start, end);
 	}
 }
